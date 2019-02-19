@@ -35,10 +35,22 @@ public class CubicPath {
 	private double exitVelocity = 0;
 	private double cruiseVelocity;
 	private double maxAcceleration;
-	private double dt;
+
+	CubicPath(double maxAcceleration, double cruiseVelocity) {
+		this.maxAcceleration = maxAcceleration;
+		this.cruiseVelocity = cruiseVelocity;
+	}
+
+	public CubicPath withEnterVelocity(double velocity) {
+		enterVelocity = velocity; return this;
+	}
+
+	public CubicPath withExitVelocity(double velocity) {
+		exitVelocity = velocity; return this;
+	}
 
 	/**
-	 * Creates a monotone cubic spline segment from origin to a given control point.
+	 * Creates a cubic curve segment from origin to a given control point.
 	 * The spline is guaranteed to end at the control point exactly at the given slope.
 	 *
 	 * @param x
@@ -50,18 +62,17 @@ public class CubicPath {
 	 * @throws IllegalArgumentException
 	 *             if the X or Y arrays are null, have different lengths or have fewer than 2 values.
 	 */
-	public CubicPath(double x, double y, double slope, double maxAcceleration, double cruiseVelocity) {
+	CubicPath withDestination(double x, double y, double slope) {
 		if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(slope) || x <= 0) {
 			throw new IllegalArgumentException("The end point has to be strictly positive");
 		}
 		L = x;
 		D = y;
 		A = slope;
-		this.maxAcceleration = maxAcceleration;
-		this.cruiseVelocity = cruiseVelocity;
 		a = -2*D/(L*L*L) +A/(L*L);
 		b = 3*D/(L*L) -A/L;
 		destination = L * Math.sqrt(1 + Math.pow(3*a*L*L + 2*b*L, 2));
+		return this;
 	}
 
 	/**
@@ -85,8 +96,7 @@ public class CubicPath {
 		return a*x*x*x + b*x*x;
 	}
 
-	public CubicPath generate(double deltaTime) {
-		dt = deltaTime;
+	CubicPath generate(double dt) {
 		if (Double.isNaN(maxAcceleration) || Double.isNaN(cruiseVelocity) || maxAcceleration <= 0 || cruiseVelocity <= 0) {
 			throw new IllegalArgumentException("Max acceleration and cruise velocity must be positive");
 		}
@@ -95,17 +105,33 @@ public class CubicPath {
 		double upDistance = upTime*(enterVelocity + cruiseVelocity)/2.0;
 		double dnDistance = dnPeriod*(exitVelocity + cruiseVelocity)/2.0;
 		double cruiseDistance = destination - upDistance - dnDistance;
-		double cruisePeriod = cruiseDistance/cruiseVelocity;
-		double dnTime = upTime + cruisePeriod;
+		System.out.println("dest="+ destination +" up=" + upDistance + " dn=" + dnDistance);
+		double cruisePeriod = cruiseDistance / cruiseVelocity;
 		double totalTime = upTime + cruisePeriod + dnPeriod;
-		double s = 0.0, x = 0.0, oldTheta = 0.0;
+		double t = 0.0, x = 0.0, oldTheta = 0.0;
 		System.out.println("Total time: " + totalTime);
-		for(double t = 0.0; t <= totalTime; t += dt) {
-			double velocity;
-			if(t < upTime) velocity = enterVelocity + maxAcceleration * t;
-			else if(t > dnTime) velocity = exitVelocity + maxAcceleration * (totalTime - t);
-			else velocity = cruiseVelocity;
-			double dS = velocity * dt;
+		double dS;
+		double s = 0;
+		do {
+			double togoDistance = destination - s;
+			double velocity = enterVelocity + maxAcceleration * t;
+			// Not final value for the velocity yet, let's check if cruise is reached.
+			if((cruiseVelocity >= enterVelocity && velocity >= cruiseVelocity)
+			 ||(cruiseVelocity < enterVelocity && velocity < cruiseVelocity)) {
+				velocity = cruiseVelocity;
+			}
+			// Now check if it's time to decelerate/accelerate at the end.
+			double tailDuration = (velocity - exitVelocity)/maxAcceleration;
+			double tailDistance = 0.5*tailDuration*(velocity + exitVelocity);
+			if(togoDistance <= 0.0) {
+				velocity = exitVelocity;
+			}
+			else if(togoDistance <= tailDistance) {
+				// Time to (de)accelerate to catch the exit velocity
+				velocity = Math.sqrt(exitVelocity*exitVelocity + 2*maxAcceleration*togoDistance);
+			}
+			// The velocity is defined. Now render all values for this point
+			dS = velocity * dt;
 			// Main curve is y = a*x^3 + b*x^2 therefore its derivative is:
 			double dydx = 3*a*x*x + 2*b*x;
 			// dx is how much we move along the X axis:
@@ -114,11 +140,13 @@ public class CubicPath {
 			mmPosition.add(s);
 			mmVelocity.add(velocity);
 			mmAlpha.add(theta - oldTheta);
-			System.out.println("X: "+x+"Theta: " + theta + ", dy/dx = " + dydx);
+			System.out.format("s=%6.3f v=%6.3f th=%6.3f%n", s, velocity, theta);
 			oldTheta = theta;
 			s += dS;
 			x += dx;
-		}
+			t += dt;
+		} while (s <= destination + dS);
+
 		System.out.println("Generation is done. Size: " + size());
 		return this;
 	}
