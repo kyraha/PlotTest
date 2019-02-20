@@ -22,6 +22,13 @@ import java.util.List;
  * Performs spline like interpolation given a finish point and angle(tangent).
  * Starting point is always (0,0) with the direction straight along the X axis.
  *
+ * Synopsis:
+ *         CubicPath path = new CubicPath(2, 4.5)
+ *                 .withEnterVelocity(1.25)
+ *                 .withExitVelocity(0)
+ *                 .withDestination(10, 2, 0.3)
+ *                 .generateSequence(0.005)
+ *                 .generateProfiles(16);
  */
 public class CubicPath {
 
@@ -73,7 +80,13 @@ public class CubicPath {
      * @param slope
      *            The slope, tan of the angle, first derivative, at the end point
      * @throws IllegalArgumentException
-     *             if the X or Y arrays are null, have different lengths or have fewer than 2 values.
+     *             if the X is negative or any parameter is NaN.
+     *
+     * Example:
+     * If the robot has to move 5 units forward and 2 units to the left (negative to right)
+     * and approach the finish at tangent 1.0 (i.e. 45 degree) then the parameters would be:
+     * .withDestination(5.0, 2.0, 1.0);
+     * Units can be feet, meters, encoder units or whatever. Just convert them properly.
      */
     CubicPath withDestination(double x, double y, double slope) {
         if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(slope) || x <= 0) {
@@ -87,24 +100,10 @@ public class CubicPath {
     }
 
     /**
-     * Interpolates the value of Y = f(X) for given X.
-     * @param x The X value.
-     * @return The interpolated Y = f(X) value.
+     * Generate the main sequence of the way points for the center of the robot
+     * @param deltaTime time steps duration. Think of 0.01 seconds
+     * @return this
      */
-    public double interpolate(double x) {
-        // Handle the boundary cases.
-        if (Double.isNaN(x)) {
-            return x;
-        }
-        if (x <= 0.0) {
-            return 0.0;
-        }
-        if (x >= L) {
-            return D + A*(x - L);
-        }
-        return a*x*x*x + b*x*x;
-    }
-
     CubicPath generateSequence(double deltaTime) {
         dt = deltaTime;
         if (Double.isNaN(maxAcceleration) || Double.isNaN(cruiseVelocity) || maxAcceleration <= 0 || cruiseVelocity <= 0) {
@@ -180,6 +179,12 @@ public class CubicPath {
 
     public double[][] profileLeft;
     public double[][] profileRight;
+
+    /**
+     * Generate motion profiles for two sides of the robot
+     * @param width The width of the robot between the wheels. Must be in the same distance units.
+     * @return this
+     */
     CubicPath generateProfiles(double width) {
         int N = mmPosition.size();
         double R = width/2.0;
